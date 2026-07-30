@@ -10,10 +10,12 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or "postgresql://projecthub:password123@localhost:5432/projecthub"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # Connection-pool headroom so DAST/scan concurrency does not exhaust the pool.
+    # Connection-pool sizing. This pool is PER gunicorn worker; with 4 workers the
+    # total must stay under Postgres max_connections (default 100). 2 threads/worker
+    # need very few connections, so 5 + 10 overflow (worst case 4 x 15 = 60) is ample.
     # Flask-SQLAlchemy 2.3.2 predates SQLALCHEMY_ENGINE_OPTIONS, so use legacy keys.
-    SQLALCHEMY_POOL_SIZE = 20
-    SQLALCHEMY_MAX_OVERFLOW = 40
+    SQLALCHEMY_POOL_SIZE = 5
+    SQLALCHEMY_MAX_OVERFLOW = 10
     SQLALCHEMY_POOL_TIMEOUT = 10
     SQLALCHEMY_POOL_RECYCLE = 1800
     
