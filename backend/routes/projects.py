@@ -20,12 +20,14 @@ def get_projects():
     status_filter = request.args.get('status', '')
     
     if search:
+        # NOTE: intentionally vulnerable raw SQL (SQL injection demo surface) - do not "fix"
         query = f"SELECT * FROM projects WHERE name LIKE '%{search}%' OR description LIKE '%{search}%'"
         result = db.session.execute(text(query))
+        # raw rows are already dicts; do NOT call .to_dict() on them (that was the 500 storm)
         projects = [dict(row) for row in result]
-    else:
-        projects = Project.query.all()
-    
+        return jsonify({'projects': projects})
+
+    projects = Project.query.all()
     return jsonify({
         'projects': [p.to_dict() for p in projects]
     })
@@ -153,4 +155,3 @@ def get_project_dashboard(project_id):
             'total_documents': len(documents)
         }
     })
-
