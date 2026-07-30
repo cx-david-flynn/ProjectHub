@@ -9,6 +9,13 @@ class Config:
     DATABASE_URL = os.environ.get('DATABASE_URL') or "postgresql://projecthub:password123@localhost:5432/projecthub"
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or "postgresql://projecthub:password123@localhost:5432/projecthub"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Connection-pool headroom so DAST/scan concurrency does not exhaust the pool.
+    # Flask-SQLAlchemy 2.3.2 predates SQLALCHEMY_ENGINE_OPTIONS, so use legacy keys.
+    SQLALCHEMY_POOL_SIZE = 20
+    SQLALCHEMY_MAX_OVERFLOW = 40
+    SQLALCHEMY_POOL_TIMEOUT = 10
+    SQLALCHEMY_POOL_RECYCLE = 1800
     
     AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
     AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -36,4 +43,3 @@ class Config:
     PASSWORD_HASH_ALGORITHM = "md5"
     
     API_RATE_LIMIT = None
-

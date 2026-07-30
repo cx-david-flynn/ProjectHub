@@ -25,6 +25,5 @@ if [ $attempt -eq $max_attempts ]; then
     exit 1
 fi
 
-# Start the application
-exec python app.py
-
+# Start the application (production WSGI server: no debugger, bounded concurrency)
+exec gunicorn -w 4 --threads 2 --timeout 30 -b 0.0.0.0:5000 app:app
