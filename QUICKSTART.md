@@ -15,6 +15,24 @@ docker compose version
 docker-compose --version
 ```
 
+## Podman
+
+Every command in this guide works with Podman — substitute `podman compose`
+(or `podman-compose`) for `docker compose`:
+
+```bash
+podman compose -f docker/docker-compose.yml up -d --build
+```
+
+If you are on **rootless Podman on Linux**, port 80 cannot be bound directly.
+Publish elsewhere instead:
+
+```bash
+HTTP_PORT=8080 podman compose -f docker/docker-compose.yml up -d --build
+```
+
+`DB_PORT` works the same way if 5432 is already in use by a local Postgres.
+
 ## Key Commands
 
 ### Build

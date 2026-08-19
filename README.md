@@ -35,24 +35,32 @@ ProjectHub is designed to help security professionals, developers, and students 
 
 ## Technology Stack
 
-- **Backend**: Flask 1.1.4
-- **Frontend**: React 16.8.6
+- **Runtime**: Python 3.11 (`python:3.11-slim`), served by Gunicorn 23.0.0
+- **Backend**: Flask 1.1.4 (Werkzeug 1.0.1)
+- **Frontend**: React 16.8.6 (react-scripts 3.0.1, Node 10)
 - **Database**: PostgreSQL 10
 - **ORM**: SQLAlchemy 1.4.0 (via Flask-SQLAlchemy 2.3.2)
-- **Image Processing**: Pillow 5.2.0
-- **Authentication**: JWT (PyJWT 1.6.4, Flask-JWT-Extended 3.13.1)
-- **Templates**: Jinja2 2.11.3
-- **Containerization**: Docker & Docker Compose
+- **Image Processing**: Pillow 9.5.0
+- **Authentication**: JWT (PyJWT 1.7.1, Flask-JWT-Extended 3.13.1)
+- **Templates**: Jinja2 2.11.3 (MarkupSafe 2.0.1)
+- **Serialization**: PyYAML 6.0.1 (`yaml.unsafe_load`), pickle, lxml 4.9.3
+- **Containerization**: Docker or Podman, via Compose
 - **Web Server**: Nginx 1.14
 - **Infrastructure**: Terraform (AWS)
 - **CI/CD**: GitHub Actions
+
+**Dependency policy**: these versions are deliberately outdated and carry known
+CVEs — that is the point of the application. The one hard rule is that the stack
+must still build and run, so every pin is the oldest release that still provides
+a cp311 wheel for the `python:3.11-slim` base image. See
+[Breaking Changes on Dependency Upgrades](#breaking-changes-on-dependency-upgrades).
 
 ## Quick Start
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- Python 3.7+ (for local development)
+- Docker with Compose, **or** Podman with `podman compose` / `podman-compose`
+- Python 3.11 (for local development)
 - Node.js 10+ (for local development)
 - PostgreSQL (if running locally without Docker)
 
@@ -70,6 +78,39 @@ docker compose version
 # V1 (legacy)
 docker-compose --version
 ```
+
+### Podman
+
+The Compose file is engine-agnostic — every command below works with Podman by
+substituting `podman compose` (or `podman-compose`) for `docker compose`:
+
+```bash
+podman compose -f docker/docker-compose.yml up -d --build
+```
+
+Three things make this work on both engines:
+
+- **No legacy `links`.** Podman's API rejects container links outright
+  (`Error response from daemon: bad parameter: link is not supported`). The
+  services resolve each other by service name over `app-network` instead, which
+  behaves identically on Docker.
+- **SELinux relabelling.** Bind mounts carry the `:z` flag so they are readable
+  under Podman on SELinux hosts (Fedora, RHEL). Docker and Docker Desktop ignore
+  the flag on platforms without SELinux.
+- **Configurable host ports.** Rootless Podman on Linux cannot bind privileged
+  ports, so the published ports are overridable rather than hardcoded:
+
+```bash
+# Serve on 8080 instead of 80, and remap Postgres off a busy 5432
+HTTP_PORT=8080 DB_PORT=15432 podman compose -f docker/docker-compose.yml up -d --build
+```
+
+On Windows and macOS (Podman Desktop / Docker Desktop) the defaults are fine,
+since the engine runs as root inside its own VM.
+
+**Line endings**: `.gitattributes` forces LF on all `*.sh` files. Without it, a
+Windows checkout with `core.autocrlf=true` produces a CRLF entrypoint script that
+fails at container start with `exec format error`.
 
 ### Key Commands
 
@@ -209,6 +250,8 @@ ProjectHub/
 │   ├── database.py     # Database initialization and seeding
 │   ├── auth.py         # Authentication logic
 │   ├── config.py       # Configuration (with hardcoded secrets)
+│   ├── Dockerfile      # Backend image (python:3.11-slim)
+│   ├── gunicorn.conf.py # WSGI server config (preload + 4 workers)
 │   ├── requirements.txt # Python dependencies
 │   ├── docker-entrypoint.sh  # Container startup script
 │   ├── routes/         # Route handlers
@@ -252,8 +295,7 @@ ProjectHub/
 │   │   └── index.html   # HTML template
 │   ├── Dockerfile      # Frontend Dockerfile
 │   └── package.json    # Node.js dependencies
-├── docker/             # Docker configuration
-│   ├── Dockerfile      # Backend Dockerfile
+├── docker/             # Compose configuration (Docker or Podman)
 │   ├── docker-compose.yml # Service orchestration
 │   └── nginx.conf      # Nginx reverse proxy config
 ├── infrastructure/     # Terraform IaC
@@ -287,7 +329,7 @@ The application includes vulnerabilities across all OWASP Top 10 categories:
 - **Security misconfiguration** (outdated dependencies, insecure defaults, missing security headers)
 - **Cross-site scripting (XSS)** (stored, reflected, DOM-based)
 - **Insecure deserialization** (pickle, YAML, JSON)
-- **Using components with known vulnerabilities** (outdated packages with CVEs, notably Pillow 5.2.0 with 15+ critical vulnerabilities)
+- **Using components with known vulnerabilities** (outdated packages with CVEs, notably Pillow 9.5.0, Flask 1.1.4/Werkzeug 1.0.1, requests 2.20.0/urllib3 1.24.3, PyJWT 1.7.1, and Flask-CORS 4.0.0)
 - **Insufficient logging and monitoring** (log injection, sensitive data in logs)
 - **Additional security weaknesses** (hardcoded secrets, insecure file uploads, path traversal, no CSRF protection, weak password hashing)
 
@@ -297,43 +339,54 @@ This application uses older patterns and APIs that will break when upgrading dep
 
 | Pattern | Current Version | Breaking Version | Files Affected | Instances | Migration Complexity |
 |---------|----------------|------------------|----------------|-----------|---------------------|
-| **Pillow (Security Driver)** | **Pillow 5.2.0** | **Pillow 10.0+** | **requirements.txt** | **15+ CVEs** | **CRITICAL** - Triggers entire upgrade cascade |
+| **Pillow (Security Driver)** | **Pillow 9.5.0** | **Pillow 10.3+** | **requirements.txt** | **RCE + several criticals** | **CRITICAL** - Triggers the upgrade cascade |
 | `Model.query` (SQLAlchemy) | SQLAlchemy 1.4.0 (via Flask-SQLAlchemy 2.3.2) | SQLAlchemy 2.0+ | 10+ files | 100+ | **SIGNIFICANT** - Replace with `db.session.query(Model)` |
-| `datetime.utcnow()` (Python) | Python 3.7 | Python 3.12+ | 8+ files | 18+ | **HIGH** - Replace with `datetime.now(timezone.utc)` |
-| `_request_ctx_stack` (Flask) | Flask 1.1.4 | Flask 2.0+ | 4+ files | 10+ | **MEDIUM** - Replace with `g` object |
+| `_request_ctx_stack` (Flask) | Flask 1.1.4 | Flask 2.0+ | 4+ files | 10+ | **SIGNIFICANT** - Replace with `g` object; Flask 2 also unpins Jinja2 and itsdangerous |
+| `datetime.utcnow()` (Python) | Python 3.11 | Python 3.12+ | 8+ files | 18+ | **HIGH** - Replace with `datetime.now(timezone.utc)` |
 | `@contextfilter` (Jinja2) | Jinja2 2.11.3 | Jinja2 3.0+ | 2 files | 7 filters | **MEDIUM** - Replace with `@pass_context` |
-| `yaml.load()` without Loader (PyYAML) | PyYAML 3.13 | PyYAML 6.0+ | 1 file | 1 | **LOW** - Add `Loader=yaml.SafeLoader` |
+| `soft_unicode` (MarkupSafe) | MarkupSafe 2.0.1 | MarkupSafe 2.1+ | transitive | 1 import | **LOW** - Forced by any Jinja2 upgrade |
+| `yaml.unsafe_load()` (PyYAML) | PyYAML 6.0.1 | n/a | 1 file | 1 | **LOW** - Replace with `yaml.safe_load()` |
 
-**Upgrade Cascade**: Pillow CVEs → Python 3.8+ required → Python 3.12 chosen → datetime.utcnow() breaks + other dependencies forced to upgrade
+**Upgrade Cascade**: Pillow CVEs → Pillow 10.3+ → Python 3.12+ desirable →
+`datetime.utcnow()` breaks (18+ instances). Independently, the Flask 1.1.4 pin is
+load-bearing: Flask 1.1.4 is what caps Jinja2 below 3.0, itsdangerous below 2.0
+and click below 8.0, so a single `pip install -U flask` cascades into
+`_request_ctx_stack`, `@contextfilter` and `soft_unicode` breakages at once.
+
+**Note on Python version**: the base image is `python:3.11-slim`, which is the
+last version where this dependency set both installs from wheels and runs
+without deprecation failures. Pillow 5.2.0 and 8.x (used in earlier revisions of
+this project) have no cp311 wheel and their C extensions fail to compile on 3.11
+— restoring that older CVE set requires moving the base image back to an older
+Python, not just editing `requirements.txt`.
 
 ### The Pillow Forcing Mechanism
 
 **Why Pillow?**  
-Pillow 5.2.0 is used throughout the application for image processing (see `backend/utils/file_handler.py`) to extract metadata, EXIF data, and validate uploaded images. This version contains **15+ critical CVEs** including buffer overflows, out-of-bounds reads/writes, and potential RCE vulnerabilities. These will be flagged as HIGH/CRITICAL by any security scanner (Snyk, Checkmarx, Dependabot, etc.), creating unavoidable pressure to upgrade.
+Pillow is used throughout the application for image processing (see `backend/utils/file_handler.py`) to extract metadata, EXIF data, and validate uploaded images. Pillow 9.5.0 carries critical CVEs including an arbitrary-code-execution path and a heap buffer overflow. These will be flagged as HIGH/CRITICAL by any security scanner (Snyk, Checkmarx, Dependabot, etc.), creating unavoidable pressure to upgrade.
 
-**Critical CVEs in Pillow 5.2.0:**
-- CVE-2019-16865 (DoS vulnerability)
-- CVE-2020-5310 (Buffer overflow)
-- CVE-2020-5311 (Out-of-bounds write, RCE potential)
-- CVE-2020-5312 (Out-of-bounds read)
-- CVE-2020-5313 (Out-of-bounds read)
-- CVE-2020-10177, CVE-2020-10378, CVE-2020-10994 (Memory corruption)
-- Multiple additional critical vulnerabilities through 2020-2023
+**Critical CVEs in Pillow 9.5.0:**
+- CVE-2023-50447 (arbitrary code execution via `ImageMath.eval`; fixed in 10.2.0)
+- CVE-2023-4863 (heap buffer overflow in bundled libwebp; fixed in 10.0.1)
+- CVE-2023-44271 (uncontrolled resource consumption / DoS; fixed in 10.0.1)
+- CVE-2024-28219 (buffer overflow in `_imagingcms.c`; fixed in 10.3.0)
 
 **The Upgrade Cascade:**
 
 ```
-Pillow 5.2.0 (current) → 15+ critical CVEs flagged by security scanners
+Pillow 9.5.0 (current) → critical CVEs flagged by security scanners
     ↓
-Students must upgrade to Pillow 10.0+ to fix CVEs
+Students must upgrade to Pillow 10.3+ to clear them
     ↓
-Pillow 10.0+ requires Python 3.8+ (drops Python 3.7 support)
-    ↓
-Students upgrade Python 3.7 → Python 3.12 (latest stable)
+Modern Pillow pulls students toward the current Python (3.12/3.13)
     ↓
 Python 3.12 deprecates datetime.utcnow() (18+ instances break)
     ↓
-Other dependencies may need upgrades for Python 3.12 compatibility
+Flask 1.1.4 will not install cleanly on newer Python, forcing Flask 2.x+
+    ↓
+Flask 2.x removes _request_ctx_stack and unpins Jinja2 (>=3.0) and MarkupSafe
+    ↓
+@contextfilter and soft_unicode break; Model.query breaks on SQLAlchemy 2.0
     ↓
 Students must refactor deprecated patterns across the codebase
 ```
@@ -345,12 +398,13 @@ Students must refactor deprecated patterns across the codebase
 4. **Educational Value**: Teaches students about dependency cascades and the cost of technical debt
 
 **Version Details:**
-- **Pillow**: Version 5.2.0 has 15+ critical CVEs. Upgrading to Pillow 10.0+ fixes CVEs but requires Python 3.8+, forcing a Python upgrade that breaks `datetime.utcnow()` and potentially other patterns.
-- **SQLAlchemy**: SQLAlchemy is pinned to `<2.0,>=1.4.0` in requirements.txt to work with Flask-SQLAlchemy 2.3.2. The `Model.query` pattern works in SQLAlchemy 1.4.x but is **removed** in SQLAlchemy 2.0+. Upgrading to SQLAlchemy 2.0+ will break all `Model.query` usage (100+ instances). This pattern must be migrated to `db.session.query(Model)` or `db.session.get(Model, id)` before upgrading.
-- **Python**: Current Docker image uses Python 3.7. `datetime.utcnow()` is deprecated in Python 3.12 and will be removed in future versions. Upgrading Python to fix Pillow compatibility will break 18+ instances.
-- **Flask**: Version 1.1.4 uses `_request_ctx_stack` which is removed in Flask 2.0+ (replaced with `g` object).
-- **Jinja2**: Version 2.11.3 uses `@contextfilter` which is replaced with `@pass_context` in Jinja2 3.0+.
-- **PyYAML**: Version 3.13 allows `yaml.load()` without Loader (with security warnings). PyYAML 6.0+ removes this unsafe default.
+- **Pillow**: Version 9.5.0 carries the CVEs listed above, including `ImageMath.eval` code execution. It is the oldest Pillow with a cp311 wheel, so it is as far back as this CVE set can go without changing the base image.
+- **SQLAlchemy**: SQLAlchemy is pinned to `1.4.0` in requirements.txt to work with Flask-SQLAlchemy 2.3.2. The `Model.query` pattern works in SQLAlchemy 1.4.x but is **removed** in SQLAlchemy 2.0+. Upgrading to SQLAlchemy 2.0+ will break all `Model.query` usage (100+ instances). This pattern must be migrated to `db.session.query(Model)` or `db.session.get(Model, id)` before upgrading.
+- **Python**: The Docker image uses Python 3.11. `datetime.utcnow()` still works here but is deprecated in Python 3.12, so any Python bump breaks 18+ instances.
+- **Flask**: Version 1.1.4 uses `_request_ctx_stack`, which is removed in Flask 2.0+ (replaced with the `g` object). Flask 1.1.4 is also what transitively pins Jinja2 `<3.0`, itsdangerous `<2.0` and click `<8.0` — upgrading Flask cascades into all of them at once.
+- **Jinja2**: Version 2.11.3 uses `@contextfilter`, which is replaced with `@pass_context` in Jinja2 3.0+. It also imports `soft_unicode` from MarkupSafe, which is why MarkupSafe is pinned to 2.0.1 (removed in 2.1).
+- **PyYAML**: Version 6.0.1 requires an explicit loader, so `backend/utils/file_handler.py` calls `yaml.unsafe_load()` to keep the insecure-deserialization behaviour. Remediation is to switch it to `yaml.safe_load()`.
+- **Flask-JWT-Extended / PyJWT**: Flask-JWT-Extended 3.13.1 expects the PyJWT 1.x API, which is why PyJWT is pinned to 1.7.1 (itself subject to CVE-2017-11424 algorithm confusion). Bumping PyJWT to 2.x without replacing Flask-JWT-Extended breaks that pairing.
 
 **Note**: These patterns are intentionally used throughout the codebase to create realistic technical debt scenarios. The current versions work correctly, but security vulnerabilities in Pillow create unavoidable pressure to upgrade, triggering cascading breaking changes that require significant refactoring.
 

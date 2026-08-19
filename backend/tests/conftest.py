@@ -18,6 +18,12 @@ class TestConfig(Config):
     """Test configuration"""
     TESTING = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    # Config computes its pool settings from the production (Postgres) URI, so
+    # they have to be cleared again here -- SQLite's StaticPool rejects them.
+    SQLALCHEMY_POOL_SIZE = None
+    SQLALCHEMY_MAX_OVERFLOW = None
+    SQLALCHEMY_POOL_TIMEOUT = None
+    SQLALCHEMY_POOL_RECYCLE = None
     WTF_CSRF_ENABLED = False
     # Test secret key - not used in production
     # checkmarx-ignore: Hardcoded Tokens

@@ -14,10 +14,14 @@ class Config:
     # total must stay under Postgres max_connections (default 100). 2 threads/worker
     # need very few connections, so 5 + 10 overflow (worst case 4 x 15 = 60) is ample.
     # Flask-SQLAlchemy 2.3.2 predates SQLALCHEMY_ENGINE_OPTIONS, so use legacy keys.
-    SQLALCHEMY_POOL_SIZE = 5
-    SQLALCHEMY_MAX_OVERFLOW = 10
-    SQLALCHEMY_POOL_TIMEOUT = 10
-    SQLALCHEMY_POOL_RECYCLE = 1800
+    # SQLite uses StaticPool/NullPool, which reject these arguments outright
+    # ("Invalid argument(s) 'pool_size' sent to create_engine()"), so only apply
+    # them to real server-backed databases.
+    _IS_SQLITE = SQLALCHEMY_DATABASE_URI.startswith('sqlite')
+    SQLALCHEMY_POOL_SIZE = None if _IS_SQLITE else 5
+    SQLALCHEMY_MAX_OVERFLOW = None if _IS_SQLITE else 10
+    SQLALCHEMY_POOL_TIMEOUT = None if _IS_SQLITE else 10
+    SQLALCHEMY_POOL_RECYCLE = None if _IS_SQLITE else 1800
     
     AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
     AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"

@@ -8,7 +8,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Override with DB_PORT if 5432 is already taken by a local Postgres.
+      - "${DB_PORT:-5432}:5432"
     networks:
       - app-network
 
@@ -25,13 +26,16 @@ services:
     expose:
       - 5000
     volumes:
-      - ../backend:/app
+      # ":z" relabels for SELinux hosts (Fedora/RHEL under Podman); Docker and
+      # Docker Desktop ignore the flag on platforms without SELinux.
+      - ../backend:/app:z
       - uploads:/app/uploads
       - logs:/app/logs
     depends_on:
       - db
-    links:
-      - db:db
+    # NOTE: legacy "links: [db:db]" was removed here. Podman's API rejects it
+    # outright ("bad parameter: link is not supported"), and it is redundant --
+    # app-network already resolves the "db" hostname on both engines.
     networks:
       - app-network
     user: root
@@ -47,7 +51,7 @@ services:
       # Or set explicitly: REACT_APP_API_URL: http://YOUR_SERVER_IP:5000/api
       REACT_APP_API_URL: ""
     volumes:
-      - ../frontend:/app
+      - ../frontend:/app:z
       - /app/node_modules
       - frontend_build:/build-output
     depends_on:
@@ -64,9 +68,11 @@ services:
   nginx:
     image: nginx:1.14
     ports:
-      - "80:80"
+      # Rootless Podman on Linux cannot bind privileged ports; set HTTP_PORT
+      # (e.g. HTTP_PORT=8080) instead of tuning ip_unprivileged_port_start.
+      - "${HTTP_PORT:-80}:80"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro,z
       - frontend_build:/usr/share/nginx/html
     depends_on:
       frontend:
