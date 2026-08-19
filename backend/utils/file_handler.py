@@ -87,7 +87,11 @@ def process_yaml_file(file_path):
         return {'error': 'YAML library not installed'}
     try:
         with open(file_path, 'r') as f:
-            data = yaml.load(f)
+            # Deliberately unsafe: constructs arbitrary Python objects from the
+            # uploaded document. PyYAML 6 made Loader a required argument, so the
+            # old bare yaml.load(f) raised TypeError and this never parsed at all
+            # -- unsafe_load keeps the intended vulnerability and actually runs.
+            data = yaml.unsafe_load(f)
         return data
     except Exception as e:
         return {'error': str(e)}
