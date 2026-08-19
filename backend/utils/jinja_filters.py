@@ -39,8 +39,14 @@ def md5_hash(context, value):
     return hashlib.md5(str(value).encode()).hexdigest()
 
 @contextfilter
-def request_id_filter(context):
-    """Get request ID from context"""
+def request_id_filter(context, value=None):
+    """Get request ID from context
+
+    Used as "{{ request_id|request_id_filter }}", so Jinja passes the piped
+    value in addition to the context -- without the second parameter every
+    render of admin.html died with "takes 1 positional argument but 2 were
+    given". The value itself is unused: the ID comes from the request context.
+    """
     from utils.request_context import get_request_context
     ctx = get_request_context()
     if ctx and hasattr(ctx, 'request_id'):
